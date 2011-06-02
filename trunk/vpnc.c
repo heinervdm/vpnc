@@ -21,6 +21,12 @@
    $Id$
 */
 
+#include "SDL.h"
+#include "PDL.h"
+
+#include <syslog.h>
+#define PACKAGEID      "de.vdm-design.vpnc"
+
 #define _GNU_SOURCE
 #include <assert.h>
 #include <unistd.h>
@@ -3131,6 +3137,82 @@ void process_late_ike(struct sa_block *s, uint8_t *r_packet, ssize_t r_length)
 
 int main(int argc, char **argv)
 {
+
+	// open syslog in case we want to print out some debugging
+	openlog(PACKAGEID, 0, LOG_USER);
+
+	// Initialize the SDL library
+	int result = SDL_Init(SDL_INIT_VIDEO);
+	if ( result != 0 )
+	{
+		syslog(LOG_INFO, "Could not init SDL: %s\n", SDL_GetError());
+		exit(1);
+	}
+
+	PDL_Init(0);
+    
+	// register the Mojo callbacks
+	PDL_RegisterJSHandler("openSocket", openSocket);
+	PDL_RegisterJSHandler("closeSocket", closeSocket);
+	PDL_RegisterJSHandler("writeSocket", writeSocket);
+	
+	PDL_JSRegistrationComplete();
+
+	// Event descriptor
+	SDL_Event Event;
+
+	do {
+		if (Paused)
+		{
+			SDL_WaitEvent(&Event);
+			if (Event.type == SDL_ACTIVEEVENT)
+			{
+				if ((Event.active.state & SDL_APPACTIVE) &&	(Event.active.gain == 1))
+				{
+					Paused = false;
+				}
+			}
+		}
+		else
+		{
+			while (SDL_PollEvent(&Event)) {
+				switch (Event.type) 
+				{
+				// List of keys that have been pressed
+				case SDL_KEYDOWN:
+					switch (Event.key.keysym.sym) 
+					{
+					// Escape forces us to quit the app
+					case SDLK_ESCAPE:
+						Event.type = SDL_QUIT;
+						break;
+					}
+					break;
+
+				// handle deactivation by pausing our animation
+				case SDL_ACTIVEEVENT:
+					if ((Event.active.state & SDL_APPACTIVE) &&	(Event.active.gain == 0))
+					{
+					Paused = true;
+					}
+					break;
+
+				default:
+					break;
+				}
+		}
+		}
+	} while (Event.type != SDL_QUIT);
+
+
+	PDL_Quit();
+	SDL_Quit();
+
+	return 0;
+
+
+////////////////////////////////////////7
+
 	int do_load_balance;
 	const uint8_t hex_test[] = { 0, 1, 2, 3 };
 	struct sa_block oursa[1];
